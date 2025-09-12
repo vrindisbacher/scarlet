@@ -14,32 +14,26 @@ enum_values = { string_literal ~ ("|" ~ string_literal)* }
 
 // Type definitions
 type_def = { "type" ~ identifier ~ "=" ~ type_expr }
-
-type_expr = { array_type | object_type | primitive_type | identifier }
-
-array_type = { (object_type | primitive_type | identifier) ~ "[" ~ "]" }
+type_expr = { array_type | object_type | primitive_type | type_reference | identifier }
+array_type = { (object_type | primitive_type | type_reference | identifier) ~ "[" ~ "]" }
 object_type = { "{" ~ field_list? ~ "}" }
 field_list = { field ~ ("," ~ field)* ~ ","? }
 field = { identifier ~ ":" ~ type_expr }
-
 primitive_type = { "string" | "number" | "boolean" | "null" }
 
 // Service definitions
 service_def = { "service" ~ identifier ~ "{" ~ service_body* ~ "}" }
-
 service_body = { type_def | call_def }
 
 // Call definitions
 call_def = { "call" ~ identifier ~ "{" ~ call_field* ~ "}" }
-
 call_field = { 
     (method_field | url_field | request_field | response_field) ~ ","?
 }
-
 method_field = { "method" ~ "=" ~ http_method }
 url_field = { "url" ~ "=" ~ url_value }
-request_field = { "request" ~ "=" ~ type_reference }
-response_field = { "response" ~ "=" ~ type_reference }
+request_field = { "request" ~ "=" ~ type_expr }
+response_field = { "response" ~ "=" ~ type_expr }
 
 http_method = { "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" }
 url_value = @{ (!("\n" | "," | "}") ~ ANY)+ }

@@ -1,120 +1,38 @@
-use std::str::FromStr;
-
-// src/parser.rs
-use anyhow::{Context, Result};
+use anyhow::Result;
 use pest::Parser;
 use pest_derive::Parser;
+use std::str::FromStr;
+
+use crate::ast::{
+    CallDef, EnumDef, Field, PrimitiveType, ServiceDef, ServiceItem, TopLevelItem, TypeDef,
+    TypeExpr,
+};
+
+macro_rules! span_error {
+    ($pair:expr, $($arg:tt)*) => {
+        {
+            let span = $pair.as_span();
+            let line_col = span.start_pos().line_col();
+            let line_num = line_col.0;
+            let col_num = line_col.1;
+
+            anyhow::bail!(
+                "Line {}, Column {}: {}\n  {:?}",
+                line_num,
+                col_num,
+                format!($($arg)*),
+                span.as_str(),
+            )
+        }
+    };
+}
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
 pub struct ScarletParser;
 
-#[derive(Debug, Clone)]
-pub enum TopLevelItem {
-    Enum(EnumDef),
-    Type(TypeDef),
-    Service(ServiceDef),
-}
-
-#[derive(Debug, Clone)]
-pub struct EnumDef {
-    pub name: String,
-    pub values: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeDef {
-    pub name: String,
-    pub type_expr: TypeExpr,
-}
-
-#[derive(Debug, Clone)]
-pub enum PrimitiveType {
-    String,
-    Number,
-    Boolean,
-    Null,
-    Array(Box<TypeExpr>),
-}
-
-impl FromStr for PrimitiveType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "string" => Ok(PrimitiveType::String),
-            "number" => Ok(PrimitiveType::Number),
-            "boolean" => Ok(PrimitiveType::Boolean),
-            "null" => Ok(PrimitiveType::Null),
-            _ => anyhow::bail!("Unknown primitive type: {}", s),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeExpr {
-    Object { fields: Vec<Field> },
-    Primitive(PrimitiveType),
-    Reference(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct Field {
-    pub name: String,
-    pub type_expr: TypeExpr,
-}
-
-#[derive(Debug, Clone)]
-pub struct ServiceDef {
-    pub name: String,
-    pub items: Vec<ServiceItem>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ServiceItem {
-    Type(TypeDef),
-    Call(CallDef),
-}
-
-#[derive(Debug, Clone)]
-pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-    HEAD,
-    OPTIONS,
-}
-
-impl FromStr for HttpMethod {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "GET" => Ok(HttpMethod::GET),
-            "POST" => Ok(HttpMethod::POST),
-            "PUT" => Ok(HttpMethod::PUT),
-            "DELETE" => Ok(HttpMethod::DELETE),
-            "PATCH" => Ok(HttpMethod::PATCH),
-            "HEAD" => Ok(HttpMethod::HEAD),
-            "OPTIONS" => Ok(HttpMethod::OPTIONS),
-            _ => anyhow::bail!("Unknown HTTP method: {}", s),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CallDef {
-    pub name: String,
-    pub method: Option<HttpMethod>,
-    pub url: Option<String>,
-    pub request: Option<String>,
-    pub response: Option<String>,
-}
-
 pub fn parse_scarlet_file(input: &str) -> Result<Vec<TopLevelItem>> {
-    let pairs = ScarletParser::parse(Rule::file, input).context("Failed to parse input")?;
+    let pairs = ScarletParser::parse(Rule::file, input)?;
 
     let mut items = Vec::new();
 
@@ -162,6 +80,10 @@ fn parse_type(pair: pest::iterators::Pair<Rule>) -> Result<TypeDef> {
 
 fn parse_type_expr_inner(pair: pest::iterators::Pair<Rule>) -> Result<TypeExpr> {
     match pair.as_rule() {
+        Rule::array_type => {
+            let inner = parse_type_expr_inner(pair.into_inner().next().unwrap())?;
+            Ok(TypeExpr::Primitive(PrimitiveType::Array(Box::new(inner))))
+        }
         Rule::object_type => {
             let mut fields = Vec::new();
             for inner in pair.into_inner() {
@@ -184,8 +106,10 @@ fn parse_type_expr_inner(pair: pest::iterators::Pair<Rule>) -> Result<TypeExpr> 
             Ok(TypeExpr::Primitive(primitive))
         }
         Rule::identifier => Ok(TypeExpr::Reference(pair.as_str().to_string())),
+        Rule::type_reference => Ok(TypeExpr::Reference(parse_type_reference(pair)?)),
         r => {
-            anyhow::bail!(
+            span_error!(
+                pair,
                 "Expected an object, primitive, or identifier but got: {:?}",
                 r
             )
@@ -200,7 +124,7 @@ fn parse_type_expr(pair: pest::iterators::Pair<Rule>) -> Result<TypeExpr> {
             parse_type_expr_inner(inner)
         }
         r => {
-            anyhow::bail!("Expected a type expression but got: {:?}", r)
+            span_error!(pair, "Expected a type expression but got {:?}", r)
         }
     }
 }
@@ -222,7 +146,11 @@ fn parse_service(pair: pest::iterators::Pair<Rule>) -> Result<ServiceDef> {
                         items.push(ServiceItem::Call(parse_call(body_item)?));
                     }
                     _ => {
-                        anyhow::bail!("Unexpected body for service: {:?}", body_item.as_rule())
+                        span_error!(
+                            body_item,
+                            "Unexpected body for service: {:?}",
+                            body_item.as_rule()
+                        )
                     }
                 }
             }
@@ -233,10 +161,11 @@ fn parse_service(pair: pest::iterators::Pair<Rule>) -> Result<ServiceDef> {
                 items.push(ServiceItem::Call(parse_call(item)?));
             }
             r => {
-                anyhow::bail!(
+                span_error!(
+                    item,
                     "Expected a service body, type definition, or call definition but got: {:?}",
                     r
-                )
+                );
             }
         }
     }
@@ -277,14 +206,15 @@ fn parse_call(pair: pest::iterators::Pair<Rule>) -> Result<CallDef> {
                     }
                     Rule::request_field => {
                         let type_ref = field_type.into_inner().next().unwrap(); // get the type_reference
-                        request = Some(parse_type_reference(type_ref)?);
+                        request = Some(parse_type_expr(type_ref)?);
                     }
                     Rule::response_field => {
                         let type_ref = field_type.into_inner().next().unwrap(); // get the type_reference
-                        response = Some(parse_type_reference(type_ref)?);
+                        response = Some(parse_type_expr(type_ref)?);
                     }
                     r => {
-                        anyhow::bail!(
+                        span_error!(
+                            field_type,
                             "Unexpected a method, url, request, or response but got: {:?}",
                             r
                         )
@@ -292,7 +222,7 @@ fn parse_call(pair: pest::iterators::Pair<Rule>) -> Result<CallDef> {
                 }
             }
             f => {
-                anyhow::bail!("Expected a call field but got: {:?}", f);
+                span_error!(field, "Expected a call field but got: {:?}", f);
             }
         }
     }

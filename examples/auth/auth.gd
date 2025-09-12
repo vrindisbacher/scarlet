@@ -8,6 +8,14 @@ type User = {
  status: Status
 }
 
+service ListUsers {
+    call ListActive {
+        method = GET
+        url = api/list/active
+        response = User[]
+    }
+}
+
 service Auth {
     type LoginRequest = {
       username: string,

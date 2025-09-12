@@ -8,6 +8,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+mod ast;
 mod parser;
 
 #[derive(Parser)]
@@ -49,7 +50,6 @@ fn main() -> Result<()> {
         process_scarlet_file(file_path)?;
     }
 
-    println!("Hello, world!");
     Ok(())
 }
 
@@ -64,7 +64,7 @@ fn process_scarlet_file(file_path: &Path) -> Result<()> {
             println!("{ast:?}");
         }
         Err(e) => {
-            eprintln!("  ✗ Parse error in {}: {}", file_path.display(), e);
+            eprintln!("Parse error in {}: {}", file_path.display(), e);
         }
     }
 
