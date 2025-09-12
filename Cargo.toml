@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.99"
 clap = { version = "4.5.47", features = ["derive"] }
+heck = "0.5.0"
 pest = "2.8.2"
 pest_derive = "2.8.2"
 walkdir = "2.5.0"

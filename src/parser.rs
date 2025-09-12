@@ -145,6 +145,9 @@ fn parse_service(pair: pest::iterators::Pair<Rule>) -> Result<ServiceDef> {
                     Rule::call_def => {
                         items.push(ServiceItem::Call(parse_call(body_item)?));
                     }
+                    Rule::enum_def => {
+                        items.push(ServiceItem::Enum(parse_enum(body_item)?));
+                    }
                     _ => {
                         span_error!(
                             body_item,
@@ -182,6 +185,7 @@ fn parse_type_reference(pair: pest::iterators::Pair<Rule>) -> Result<String> {
 }
 
 fn parse_call(pair: pest::iterators::Pair<Rule>) -> Result<CallDef> {
+    let err_cloned = pair.clone();
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
 
@@ -227,10 +231,14 @@ fn parse_call(pair: pest::iterators::Pair<Rule>) -> Result<CallDef> {
         }
     }
 
+    if method.is_none() || url.is_none() {
+        span_error!(err_cloned, "method and url are required fields");
+    }
+
     Ok(CallDef {
         name,
-        method,
-        url,
+        method: method.unwrap(),
+        url: url.unwrap(),
         request,
         response,
     })

@@ -25,7 +25,6 @@ pub enum PrimitiveType {
     String,
     Number,
     Boolean,
-    Null,
     Array(Box<TypeExpr>),
 }
 
@@ -37,7 +36,6 @@ impl FromStr for PrimitiveType {
             "string" => Ok(PrimitiveType::String),
             "number" => Ok(PrimitiveType::Number),
             "boolean" => Ok(PrimitiveType::Boolean),
-            "null" => Ok(PrimitiveType::Null),
             _ => anyhow::bail!("Unknown primitive type: {}", s),
         }
     }
@@ -66,6 +64,7 @@ pub struct ServiceDef {
 pub enum ServiceItem {
     Type(TypeDef),
     Call(CallDef),
+    Enum(EnumDef),
 }
 
 #[derive(Debug, Clone)]
@@ -96,11 +95,25 @@ impl FromStr for HttpMethod {
     }
 }
 
+impl ToString for HttpMethod {
+    fn to_string(&self) -> String {
+        match self {
+            HttpMethod::GET => "GET".to_string(),
+            HttpMethod::POST => "POST".to_string(),
+            HttpMethod::PUT => "PUT".to_string(),
+            HttpMethod::DELETE => "DELETE".to_string(),
+            HttpMethod::PATCH => "PATCH".to_string(),
+            HttpMethod::HEAD => "HEAD".to_string(),
+            HttpMethod::OPTIONS => "OPTIONS".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CallDef {
     pub name: String,
-    pub method: Option<HttpMethod>,
-    pub url: Option<String>,
+    pub method: HttpMethod,
+    pub url: String,
     pub request: Option<TypeExpr>,
     pub response: Option<TypeExpr>,
 }

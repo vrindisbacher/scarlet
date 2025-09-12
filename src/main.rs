@@ -5,11 +5,57 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use walkdir::WalkDir;
 
+use crate::r#gen::CodeGenerator;
+
 mod ast;
+mod r#gen;
 mod parser;
+
+#[derive(Clone, Copy)]
+enum RequestLanguages {
+    Typescript,
+}
+
+impl FromStr for RequestLanguages {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "typescript" => Ok(Self::Typescript),
+            _ => Err(anyhow::format_err!(
+                "{} is not a supported language for requests.",
+                s
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ResponseLanguages {
+    Rust,
+    Typescript,
+}
+
+impl FromStr for ResponseLanguages {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "typescript" => Ok(Self::Typescript),
+            "rust" => Ok(Self::Rust),
+            _ => Err(anyhow::format_err!(
+                "{} is not a supported language for response.",
+                s
+            )),
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "scarlet")]
@@ -47,13 +93,16 @@ fn main() -> Result<()> {
     }
 
     for file_path in scarlet_files.iter() {
-        process_scarlet_file(file_path)?;
+        process_scarlet_file(file_path, &cli)?;
     }
 
     Ok(())
 }
 
-fn process_scarlet_file(file_path: &Path) -> Result<()> {
+fn process_scarlet_file(file_path: &Path, cli: &Cli) -> Result<()> {
+    let request_language = RequestLanguages::from_str(&cli.request_language)?;
+    let response_language = ResponseLanguages::from_str(&cli.response_language)?;
+
     // Read the file
     let content = std::fs::read_to_string(file_path)
         .with_context(|| format!("Failed to read file: {}", file_path.display()))?;
@@ -61,7 +110,14 @@ fn process_scarlet_file(file_path: &Path) -> Result<()> {
     // Parse the file
     match parser::parse_scarlet_file(&content) {
         Ok(ast) => {
-            println!("{ast:?}");
+            let code_gen = CodeGenerator::new(request_language, response_language);
+            let res = code_gen.gen_from(ast)?;
+
+            println!("REQUEST");
+            println!("{}", res.request());
+
+            println!("RESPONSE");
+            println!("{}", res.response());
         }
         Err(e) => {
             eprintln!("Parse error in {}: {}", file_path.display(), e);

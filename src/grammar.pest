@@ -19,11 +19,11 @@ array_type = { (object_type | primitive_type | type_reference | identifier) ~ "[
 object_type = { "{" ~ field_list? ~ "}" }
 field_list = { field ~ ("," ~ field)* ~ ","? }
 field = { identifier ~ ":" ~ type_expr }
-primitive_type = { "string" | "number" | "boolean" | "null" }
+primitive_type = { "string" | "number" | "boolean" }
 
 // Service definitions
 service_def = { "service" ~ identifier ~ "{" ~ service_body* ~ "}" }
-service_body = { type_def | call_def }
+service_body = { enum_def | type_def | call_def }
 
 // Call definitions
 call_def = { "call" ~ identifier ~ "{" ~ call_field* ~ "}" }

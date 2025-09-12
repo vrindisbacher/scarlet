@@ -265,6 +265,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "heck",
  "pest",
  "pest_derive",
  "walkdir",
