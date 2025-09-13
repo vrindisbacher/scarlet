@@ -22,6 +22,14 @@ enum RequestLanguages {
     Typescript,
 }
 
+impl RequestLanguages {
+    pub fn ext(&self) -> &'static str {
+        match self {
+            RequestLanguages::Typescript => "ts",
+        }
+    }
+}
+
 impl FromStr for RequestLanguages {
     type Err = anyhow::Error;
 
@@ -40,6 +48,15 @@ impl FromStr for RequestLanguages {
 enum ResponseLanguages {
     Rust,
     Typescript,
+}
+
+impl ResponseLanguages {
+    pub fn ext(&self) -> &'static str {
+        match self {
+            ResponseLanguages::Typescript => "ts",
+            ResponseLanguages::Rust => "rs",
+        }
+    }
 }
 
 impl FromStr for ResponseLanguages {
@@ -113,11 +130,34 @@ fn process_scarlet_file(file_path: &Path, cli: &Cli) -> Result<()> {
             let code_gen = CodeGenerator::new(request_language, response_language);
             let res = code_gen.gen_from(ast)?;
 
-            println!("REQUEST");
-            println!("{}", res.request());
+            let request = res.request();
+            let request_ext = request_language.ext();
+            let response = res.response();
+            let response_ext = response_language.ext();
 
-            println!("RESPONSE");
-            println!("{}", res.response());
+            // Get base filename without extension
+            let base_name = file_path
+                .file_stem()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in filename"))?;
+
+            // Create output directory if it doesn't exist
+            std::fs::create_dir_all(&cli.output)?;
+
+            // Write request file
+            let request_path =
+                Path::new(&cli.output).join(format!("{}.{}", base_name, request_ext));
+            std::fs::write(&request_path, request).with_context(|| {
+                format!("Failed to write request file: {}", request_path.display())
+            })?;
+
+            // Write response file
+            let response_path =
+                Path::new(&cli.output).join(format!("{}.{}", base_name, response_ext));
+            std::fs::write(&response_path, response).with_context(|| {
+                format!("Failed to write response file: {}", response_path.display())
+            })?;
         }
         Err(e) => {
             eprintln!("Parse error in {}: {}", file_path.display(), e);

@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use crate::ast::{
     CallDef, EnumDef, Field, PrimitiveType, ServiceDef, ServiceItem, TopLevelItem, TypeDef,
-    TypeExpr,
+    TypeExpr, UrlParts,
 };
 
 macro_rules! span_error {
@@ -205,8 +205,39 @@ fn parse_call(pair: pest::iterators::Pair<Rule>) -> Result<CallDef> {
                         method = Some(method_value.as_str().parse()?);
                     }
                     Rule::url_field => {
-                        let url_inner = field_type.into_inner().next().unwrap();
-                        url = Some(url_inner.as_str().trim().to_string());
+                        let url_path = field_type.into_inner().next().unwrap();
+                        let mut url_parts = Vec::new();
+
+                        for segment in url_path.into_inner() {
+                            match segment.as_rule() {
+                                Rule::url_segment => {
+                                    let inner_segment = segment.into_inner().next().unwrap();
+                                    match inner_segment.as_rule() {
+                                        Rule::static_segment => {
+                                            url_parts.push(UrlParts::Static(
+                                                inner_segment.as_str().to_string(),
+                                            ));
+                                        }
+                                        Rule::path_param => {
+                                            let mut param_inner = inner_segment.into_inner();
+                                            let param_name =
+                                                param_inner.next().unwrap().as_str().to_string();
+                                            let param_type =
+                                                param_inner.next().unwrap().as_str().to_string();
+
+                                            // Store the parameter info
+                                            url_parts.push(UrlParts::Param(
+                                                param_name,
+                                                PrimitiveType::from_str(&param_type)?,
+                                            ));
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        url = Some(url_parts);
                     }
                     Rule::request_field => {
                         let type_ref = field_type.into_inner().next().unwrap(); // get the type_reference

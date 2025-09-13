@@ -1,6 +1,6 @@
 use crate::{
     RequestLanguages, ResponseLanguages,
-    ast::{CallDef, EnumDef, ServiceDef, TopLevelItem, TypeDef, TypeExpr},
+    ast::{CallDef, EnumDef, ServiceDef, TopLevelItem, TypeDef, TypeExpr, UrlParts},
 };
 use anyhow::Result;
 use heck::{ToLowerCamelCase, ToPascalCase, ToSnakeCase};
@@ -31,6 +31,7 @@ impl RustGen {
         let indent = "\t".repeat(indent_level);
         let field_indent = "\t".repeat(indent_level + 1);
         let mut out = String::new();
+        out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize)]\n{}#[serde(rename_all = \"snake_case\")]\n", indent, indent));
         out.push_str(&format!("{}pub enum {} {{\n", indent, name));
         for opt in opts {
             out.push_str(&format!("{}{},\n", field_indent, opt.to_pascal_case()));
@@ -45,6 +46,7 @@ impl RustGen {
         let mut out = String::new();
         match &ty.type_expr {
             TypeExpr::Object { .. } => {
+                out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize)]\n{}#[serde(rename_all = \"camelCase\")]\n", indent, indent));
                 out.push_str(&format!("{}pub struct {} {{\n", indent, name));
                 let res = self.gen_type_expr(&ty.type_expr, indent_level + 1)?;
                 out.push_str(&res);
@@ -64,7 +66,7 @@ impl RustGen {
             TypeExpr::Object { fields } => {
                 let mut out = String::new();
                 for field in fields {
-                    let field_name = &field.name;
+                    let field_name = &field.name.to_snake_case();
                     let field_type = &field.type_expr;
                     let gen_ty = self.gen_type_expr(&field_type, indent_level)?;
                     out.push_str(&format!("{indent}{field_name}: {gen_ty},\n"));
@@ -141,7 +143,7 @@ impl TypescriptGen {
             TypeExpr::Object { fields } => {
                 let mut out = String::new();
                 for field in fields {
-                    let field_name = &field.name;
+                    let field_name = &field.name.to_lower_camel_case();
                     let field_type = &field.type_expr;
                     let gen_ty = self.gen_type_expr(&field_type)?;
                     out.push_str(&format!("\t{field_name}: {gen_ty},\n"));
@@ -204,13 +206,24 @@ impl TypescriptGen {
     fn generate_fetch_body(
         &self,
         method: &str,
-        url: &str,
+        url: &Vec<UrlParts>,
         has_request: bool,
         has_response: bool,
     ) -> String {
         let mut lines = Vec::new();
 
-        lines.push(format!("\t\tconst response = await fetch('{}', {{", url));
+        let url = url
+            .into_iter()
+            .map(|part| match part {
+                UrlParts::Static(p) => p.to_string(),
+                UrlParts::Param(path_name, _) => {
+                    format!("${{{}}}", path_name.to_lower_camel_case())
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("/");
+
+        lines.push(format!("\t\tconst response = await fetch(`{}`, {{", url));
         lines.push(format!("\t\t\tmethod: '{}',", method));
         lines.push("\t\t\theaders: { 'Content-Type': 'application/json' },".to_string());
 
@@ -219,13 +232,14 @@ impl TypescriptGen {
         }
 
         lines.push("\t\t});".to_string());
-        lines.push("\t\tif (response.status !== 200) {".to_string());
-        lines.push("\t\t\tthrow new Error('FAIL')".to_string());
+        lines.push("\t\tif (!response.ok) {".to_string());
+        lines.push(
+            "\t\t\tthrow new Error(`HTTP ${response.status}: ${response.statusText}`)".to_string(),
+        );
         lines.push("\t\t} else {".to_string());
 
         if has_response {
-            lines.push("\t\t\tlet res = await response.json();".to_string());
-            lines.push("\t\t\treturn res;".to_string());
+            lines.push("\t\t\treturn await response.json();".to_string());
         } else {
             lines.push("\t\t\treturn;".to_string());
         }
@@ -245,28 +259,51 @@ impl GenRequests for TypescriptGen {
         let method = &call_def.method;
         let url = &call_def.url;
 
-        let mut method_out = String::new();
-        method_out.push_str(&format!("\t{}(", &call_def.name.to_lower_camel_case()));
+        let mut method_params = Vec::new();
 
-        let has_request = call_def.request.is_some();
-        let has_response = call_def.response.is_some();
+        // Add path parameters
+        for param in url.iter() {
+            if let UrlParts::Param(param_name, primitive_type) = param {
+                let arg_ty = match primitive_type {
+                    crate::ast::PrimitiveType::String => "string",
+                    crate::ast::PrimitiveType::Number => "number",
+                    crate::ast::PrimitiveType::Boolean => "boolean",
+                    crate::ast::PrimitiveType::Array(_) => {
+                        return Err(anyhow::anyhow!(
+                            "Array not allowed as dynamic url parameter"
+                        ));
+                    }
+                };
+                method_params.push(format!("{}: {}", param_name.to_lower_camel_case(), arg_ty));
+            }
+        }
 
-        // Add parameter if there's a request body
+        // Add request body parameter
         if let Some(request_type) = &call_def.request {
             let arg_ty = self.gen_type_expr(request_type)?;
-            method_out.push_str(&format!("body: {}", arg_ty));
+            method_params.push(format!("body: {}", arg_ty));
         }
-        method_out.push(')');
+
+        // Build method signature
+        let method_signature = format!(
+            "\tasync {}({})",
+            call_def.name.to_lower_camel_case(),
+            method_params.join(", ")
+        );
 
         // Add return type
-        if let Some(response_type) = &call_def.response {
+        let return_type = if let Some(response_type) = &call_def.response {
             let return_ty = self.gen_type_expr(response_type)?;
-            method_out.push_str(&format!(": Promise<{}> {{\n", return_ty));
+            format!(": Promise<{}>", return_ty)
         } else {
-            method_out.push_str(": Promise<void> {\n");
-        }
+            ": Promise<void>".to_string()
+        };
 
-        // Generate the fetch body using the helper method
+        let mut method_out = format!("{}{} {{\n", method_signature, return_type);
+
+        // Generate the fetch body
+        let has_request = call_def.request.is_some();
+        let has_response = call_def.response.is_some();
         let fetch_body =
             self.generate_fetch_body(&method.to_string(), url, has_request, has_response);
 

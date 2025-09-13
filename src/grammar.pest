@@ -31,10 +31,16 @@ call_field = {
     (method_field | url_field | request_field | response_field) ~ ","?
 }
 method_field = { "method" ~ "=" ~ http_method }
-url_field = { "url" ~ "=" ~ url_value }
+url_field = { "url" ~ "=" ~ url_path }
 request_field = { "request" ~ "=" ~ type_expr }
 response_field = { "response" ~ "=" ~ type_expr }
 
 http_method = { "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS" }
-url_value = @{ (!("\n" | "," | "}") ~ ANY)+ }
+
+// URL path with support for path parameters
+url_path = { url_segment ~ ("/" ~ url_segment)* }
+url_segment = { path_param | static_segment }
+path_param = { "{" ~ identifier ~ ":" ~ primitive_type ~ "}" }
+static_segment = @{ (!("/" | "{" | "\n" | "," | "}") ~ ANY)+ }
+
 type_reference = { identifier ~ ("." ~ identifier)? }

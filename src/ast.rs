@@ -110,10 +110,16 @@ impl ToString for HttpMethod {
 }
 
 #[derive(Debug, Clone)]
+pub enum UrlParts {
+    Static(String),
+    Param(String, PrimitiveType)
+}
+
+#[derive(Debug, Clone)]
 pub struct CallDef {
     pub name: String,
     pub method: HttpMethod,
-    pub url: String,
+    pub url: Vec<UrlParts>,
     pub request: Option<TypeExpr>,
     pub response: Option<TypeExpr>,
 }
