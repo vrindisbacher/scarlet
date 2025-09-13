@@ -31,7 +31,7 @@ impl RustGen {
         let indent = "\t".repeat(indent_level);
         let field_indent = "\t".repeat(indent_level + 1);
         let mut out = String::new();
-        out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize)]\n{}#[serde(rename_all = \"snake_case\")]\n", indent, indent));
+        out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]\n{}#[serde(rename_all = \"snake_case\")]\n", indent, indent));
         out.push_str(&format!("{}pub enum {} {{\n", indent, name));
         for opt in opts {
             out.push_str(&format!("{}{},\n", field_indent, opt.to_pascal_case()));
@@ -46,7 +46,7 @@ impl RustGen {
         let mut out = String::new();
         match &ty.type_expr {
             TypeExpr::Object { .. } => {
-                out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize)]\n{}#[serde(rename_all = \"camelCase\")]\n", indent, indent));
+                out.push_str(&format!("{}#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]\n{}#[serde(rename_all = \"camelCase\")]\n", indent, indent));
                 out.push_str(&format!("{}pub struct {} {{\n", indent, name));
                 let res = self.gen_type_expr(&ty.type_expr, indent_level + 1)?;
                 out.push_str(&res);
@@ -69,7 +69,7 @@ impl RustGen {
                     let field_name = &field.name.to_snake_case();
                     let field_type = &field.type_expr;
                     let gen_ty = self.gen_type_expr(&field_type, indent_level)?;
-                    out.push_str(&format!("{indent}{field_name}: {gen_ty},\n"));
+                    out.push_str(&format!("{indent}pub {field_name}: {gen_ty},\n"));
                 }
                 Ok(out)
             }
